@@ -3,6 +3,12 @@
 - Status: accepted **only for synthetic local/disposable demo**.
 - Date: 2026-11-06. Review/expiry: before enterprise connected data or 2026-12-06.
 
+## Context
+
+The local rehearsal must run without a managed database or enterprise tenant.
+The existing API and UI share a binding contract; replacing it without a
+coordinated compatibility migration would break the demonstration.
+
 ## Decision
 
 Use SQLite for workflow snapshots, policy/state and isolated synthetic stock
@@ -23,7 +29,7 @@ these must be tested by the application owner. They do not establish distributed
 transactional guarantees. Each workflow's synthetic stock ledger is isolated;
 this is not enterprise ATP or a global shared stock ledger.
 
-## WAF trade-offs
+## Consequences
 
 | Pillar | Consequence |
 | --- | --- |
@@ -42,5 +48,13 @@ approvals, replay and crash recovery. Design durable audit/outbox and real-adapt
 compensation using the [Compensating Transaction pattern][pattern].
 Use a compatible contract/version migration rather than silently breaking UI.
 No enterprise database service or replication pattern is provisioned here.
+
+## Alternatives considered
+
+A managed transactional store would provide shared durable state but requires
+an approved subscription, residency/SLO requirements and deployment validation.
+A new `/api/v1` collection/error contract would align with the generic API
+standard but requires API/UI migration and compatibility tests. Neither is
+silently introduced into this bounded local alignment.
 
 [pattern]: https://learn.microsoft.com/en-us/azure/architecture/patterns/compensating-transaction

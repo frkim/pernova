@@ -35,13 +35,13 @@ test('mobile layout remains readable without viewport overflow', async ({ page }
   expect(overflow).toBe(false);
 });
 
-test('built UI works behind the backend content security policy', async ({ page }) => {
+test('built UI works behind the backend content security policy', async ({ page }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text());
   });
-  await page.goto('http://127.0.0.1:8000');
+  await page.goto(testInfo.config.metadata.apiOrigin as string);
   await expect(page.getByRole('button', { name: /Lancer l.*analyse/i })).toBeEnabled();
   await page.getByRole('button', { name: 'Gouvernance', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Gouvernance', exact: true })).toHaveAttribute(

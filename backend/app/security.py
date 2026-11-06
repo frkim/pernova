@@ -5,8 +5,9 @@ import ipaddress
 import json
 import logging
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
@@ -24,7 +25,25 @@ if not LOGGER.handlers:
 LOGGER.setLevel(logging.INFO)
 LOGGER.propagate = False
 MAX_BODY_BYTES = 65536
+MAX_RATE_KEYS = 1024
+BODY_TIMEOUT_SECONDS = 10
 ROLES = {"Reader", "Operator", "Approver", "SecurityAdmin", "Admin", "Agent"}
+
+
+def log_event(level: int, event: str, correlation_id: str, **attributes: str | int | float) -> None:
+    """Emit only caller-selected metadata, never request bodies or exception messages."""
+    LOGGER.log(
+        level,
+        json.dumps(
+            {
+                **attributes,
+                "event": event,
+                "level": logging.getLevelName(level),
+                "timestamp": datetime.now(UTC).isoformat(),
+                "correlation_id": correlation_id,
+            }
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -84,8 +103,29 @@ class BoundaryMiddleware:
         self.app = app
         self.config = config
         self.auth = Authenticator(config)
-        self.rates: dict[str, deque[float]] = defaultdict(deque)
+        self.rates: dict[str, deque[float]] = {}
+        self.next_rate_cleanup = 0.0
         self.sse_connections = 0
+
+    def check_rate(self, key: str, started: float) -> None:
+        """Bound requests per namespaced bucket and the retained bucket collection."""
+        if started >= self.next_rate_cleanup:
+            self.rates = {
+                identity: queue
+                for identity, queue in self.rates.items()
+                if queue and queue[-1] > started - 60
+            }
+            self.next_rate_cleanup = started + 60
+        if key not in self.rates:
+            if len(self.rates) >= MAX_RATE_KEYS:
+                raise DomainError("Request tracking capacity reached", 409)
+            self.rates[key] = deque()
+        queue = self.rates[key]
+        while queue and queue[0] <= started - 60:
+            queue.popleft()
+        if len(queue) >= 240:
+            raise DomainError("Request rate limit exceeded", 409)
+        queue.append(started)
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
@@ -93,15 +133,16 @@ class BoundaryMiddleware:
             return
         correlation = uuid4().hex
         scope.setdefault("state", {})["correlation_id"] = correlation
-        headers = {key.decode().lower(): value.decode() for key, value in scope["headers"]}
         path = scope["path"]
         started = time.monotonic()
         sse = path.endswith("/events") and path.startswith("/api/workflows/")
         status_code = 500
+        response_started = False
 
         async def guarded_send(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_started
             if message["type"] == "http.response.start":
+                response_started = True
                 status_code = message["status"]
                 identity_origin = (
                     b" https://login.microsoftonline.com"
@@ -125,6 +166,8 @@ class BoundaryMiddleware:
                     (b"cache-control", b"no-store"),
                     (b"content-security-policy", csp),
                 ]
+                if self.config.mode == "connected":
+                    extra.append((b"strict-transport-security", b"max-age=31536000"))
                 message["headers"] = list(message.get("headers", [])) + extra
             await send(message)
 
@@ -138,6 +181,10 @@ class BoundaryMiddleware:
                 raise DomainError("Headers exceed size limit", 422)
             if len(scope.get("query_string", b"")) > 4096 or len(path) > 2048:
                 raise DomainError("Request target exceeds input limits", 422)
+            headers = {
+                key.decode("latin-1").lower(): value.decode("latin-1")
+                for key, value in scope["headers"]
+            }
             host = urlsplit("//" + headers.get("host", "")).hostname
             normalized = f"[{host}]" if host == "::1" else host
             if normalized not in self.config.allowed_hosts:
@@ -152,16 +199,14 @@ class BoundaryMiddleware:
             if headers.get("sec-fetch-site") == "cross-site" and not origin:
                 raise DomainError("Cross-site access not authorized", 403)
             api = path.startswith("/api/") or path == "/mcp"
+            peer_address = (scope.get("client") or ("unknown",))[0]
             if api and scope["method"] != "OPTIONS":
-                scope["state"]["caller"] = await self.auth.caller(headers.get("authorization", ""))
-            caller: Caller | None = scope["state"].get("caller")
-            key = caller.subject if caller else (scope.get("client") or ("unknown",))[0]
-            queue = self.rates[key]
-            while queue and queue[0] <= started - 60:
-                queue.popleft()
-            if len(queue) >= 240:
-                raise DomainError("Request rate limit exceeded", 409)
-            queue.append(started)
+                self.check_rate(f"auth_peer:{peer_address}", started)
+                caller = await self.auth.caller(headers.get("authorization", ""))
+                scope["state"]["caller"] = caller
+                self.check_rate(f"principal:{caller.subject}", started)
+            else:
+                self.check_rate(f"public_peer:{peer_address}", started)
             if sse and self.sse_connections >= 8:
                 raise DomainError("Event connection limit exceeded", 409)
             if api and scope["method"] in {"POST", "PUT"}:
@@ -174,15 +219,19 @@ class BoundaryMiddleware:
                 if size < 0 or size > MAX_BODY_BYTES:
                     raise DomainError("Request body exceeds size limit", 422)
                 body = bytearray()
-                while True:
-                    message = await receive()
-                    if message["type"] == "http.disconnect":
-                        return
-                    body.extend(message.get("body", b""))
-                    if len(body) > MAX_BODY_BYTES:
-                        raise DomainError("Request body exceeds size limit", 422)
-                    if not message.get("more_body"):
-                        break
+                try:
+                    async with asyncio.timeout(BODY_TIMEOUT_SECONDS):
+                        while True:
+                            message = await receive()
+                            if message["type"] == "http.disconnect":
+                                return
+                            body.extend(message.get("body", b""))
+                            if len(body) > MAX_BODY_BYTES:
+                                raise DomainError("Request body exceeds size limit", 422)
+                            if not message.get("more_body"):
+                                break
+                except TimeoutError as exc:
+                    raise DomainError("Request body read timed out", 422) from exc
                 try:
                     parsed_body = json.loads(body)
                 except (json.JSONDecodeError, UnicodeDecodeError):
@@ -220,20 +269,27 @@ class BoundaryMiddleware:
                     if sse:
                         self.sse_connections -= 1
         except DomainError as exc:
+            if response_started:
+                log_event(logging.ERROR, "http_response_failed", correlation)
+                raise
             await error(exc.detail, exc.status_code)
-        except Exception:
-            if status_code == 500:
-                await error("Request failed closed", 500)
+        except Exception as exc:
+            log_event(
+                logging.ERROR,
+                "http_request_failed",
+                correlation,
+                error_type=type(exc).__name__,
+            )
+            if response_started:
+                raise
+            await error("Request failed closed", 500)
         finally:
-            LOGGER.info(
-                json.dumps(
-                    {
-                        "event": "http_request",
-                        "method": scope["method"],
-                        "route": "api" if path.startswith("/api/") else "service",
-                        "status": status_code,
-                        "correlation_id": correlation,
-                        "duration_ms": round((time.monotonic() - started) * 1000, 3),
-                    }
-                )
+            log_event(
+                logging.INFO,
+                "http_request",
+                correlation,
+                method=scope["method"],
+                route="api" if path.startswith("/api/") else "service",
+                status=status_code,
+                duration_ms=round((time.monotonic() - started) * 1000, 3),
             )

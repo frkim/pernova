@@ -1,6 +1,8 @@
+import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from unittest.mock import AsyncMock
 
 import pytest
 from backend.app.config import Config
@@ -123,3 +125,65 @@ def test_connected_inference_uami_required(
             config.validate()
     else:
         config.validate()
+
+
+@pytest.mark.parametrize("failure", [TimeoutError, RuntimeError, asyncio.CancelledError])
+async def test_inference_failure_keeps_cause_or_cancellation_without_retry(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch, failure: type[BaseException]
+) -> None:
+    request = AsyncMock(side_effect=failure("synthetic private failure"))
+    credential = SimpleNamespace(close=AsyncMock())
+    client = SimpleNamespace(responses=SimpleNamespace(create=request), close=AsyncMock())
+    monkeypatch.setattr("backend.app.inference.ManagedIdentityCredential", lambda **_: credential)
+    monkeypatch.setattr("backend.app.inference.AsyncOpenAI", lambda **_: client)
+    inference = ResponsesInference(connected_config(data_dir))
+    try:
+        if failure is asyncio.CancelledError:
+            with pytest.raises(asyncio.CancelledError):
+                await inference.summarize("intake", "Synthetic stock facts.")
+        else:
+            with pytest.raises(DomainError, match="failed closed") as error:
+                await inference.summarize("intake", "Synthetic stock facts.")
+            assert isinstance(error.value.__cause__, failure)
+            assert "private" not in str(error.value)
+        request.assert_awaited_once()
+    finally:
+        await inference.close()
+
+
+async def test_identity_closed_even_when_client_cleanup_fails(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    credential = SimpleNamespace(close=AsyncMock())
+    client = SimpleNamespace(close=AsyncMock(side_effect=RuntimeError("cleanup failed")))
+    monkeypatch.setattr("backend.app.inference.ManagedIdentityCredential", lambda **_: credential)
+    monkeypatch.setattr("backend.app.inference.AsyncOpenAI", lambda **_: client)
+    inference = ResponsesInference(connected_config(data_dir))
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await inference.close()
+    credential.close.assert_awaited_once()
+
+
+async def test_total_deadline_cancels_pending_request(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pending: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+
+    async def stalled_request(**kwargs: Any) -> Any:
+        return await pending
+
+    request = AsyncMock(side_effect=stalled_request)
+    credential = SimpleNamespace(close=AsyncMock())
+    client = SimpleNamespace(responses=SimpleNamespace(create=request), close=AsyncMock())
+    monkeypatch.setattr("backend.app.inference.ManagedIdentityCredential", lambda **_: credential)
+    monkeypatch.setattr("backend.app.inference.AsyncOpenAI", lambda **_: client)
+    monkeypatch.setattr("backend.app.inference.INFERENCE_TIMEOUT_SECONDS", 0)
+    inference = ResponsesInference(connected_config(data_dir))
+    try:
+        with pytest.raises(DomainError, match="failed closed") as error:
+            await inference.summarize("intake", "Synthetic stock facts.")
+        assert isinstance(error.value.__cause__, TimeoutError)
+        assert pending.cancelled()
+        request.assert_awaited_once()
+    finally:
+        await inference.close()

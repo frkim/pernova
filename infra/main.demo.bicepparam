@@ -2,6 +2,7 @@ using './main.bicep'
 
 // Fail closed: values come from an approved environment, never a selected subscription in source.
 // This file can compile offline with environment variables, but does not authorize deployment.
+// Run python infra\validate_foundry.py before evaluating these approved inputs.
 param location = readEnvironmentVariable('PERNOVA_AZURE_REGION')
 param owner = readEnvironmentVariable('PERNOVA_RESOURCE_OWNER')
 param costCenter = readEnvironmentVariable('PERNOVA_COST_CENTER')

@@ -182,10 +182,14 @@ class Engine:
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        if self.inference:
-            await self.inference.close()
-        self.telemetry.close()
-        self.store.close()
+        try:
+            if self.inference:
+                await self.inference.close()
+        finally:
+            try:
+                self.telemetry.close()
+            finally:
+                self.store.close()
 
     async def wait(self, workflow_id: str) -> Workflow:
         task = self.tasks.get(workflow_id)

@@ -46,6 +46,13 @@ az bicep lint --file infra\main.bicep
 az bicep build --file infra\main.bicep --stdout
 ```
 
+`npm run check:standards` checks immutable action references, workflow-level
+permissions and Foundry new/v2 source conventions. Its regression tests run in
+`npm test`; lint includes both standards and protected-feed checks.
+Read the [standards assessment](docs/standards-compliance.md) before claiming
+repository-wide compliance. It records settings evidence, expiring exceptions
+and dependency fixes blocked by CFS.
+
 Add regression tests for authorization, bounded inputs/cost/tool loops, approval
 revision/idempotency and malicious-source handling. Record **actual** results and
 unavailable checks (including Docker daemon), not “tested” when only reviewed.

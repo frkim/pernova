@@ -1,5 +1,7 @@
 import asyncio
+import sqlite3
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from backend.app.engine import Engine, Guardrail
@@ -23,6 +25,29 @@ def decision(wf: Workflow, action: str = "approve") -> DecisionRequest:
 async def nominal(engine: Engine) -> Workflow:
     started = engine.start(StartRequest())
     return await engine.wait(started.id)
+
+
+@pytest.mark.parametrize("failure_source", ["inference", "telemetry"])
+async def test_shutdown_always_closes_database(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch, failure_source: str
+) -> None:
+    service = Engine(Store(data_dir / "cleanup.sqlite3"), step_delay=0)
+    if failure_source == "inference":
+        inference = AsyncMock()
+        inference.close.side_effect = RuntimeError("cleanup failed")
+        service.inference = inference
+    else:
+        original_close = service.telemetry.close
+
+        def failing_close() -> None:
+            original_close()
+            raise RuntimeError("cleanup failed")
+
+        monkeypatch.setattr(service.telemetry, "close", failing_close)
+    with pytest.raises(RuntimeError, match="cleanup failed"):
+        await service.close()
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        service.store.db.execute("SELECT 1")
 
 
 async def test_nominal_atomic_approval_and_actual_otel(engine: Engine) -> None:

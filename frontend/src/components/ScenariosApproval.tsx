@@ -23,6 +23,7 @@ import {
   WEIGHT_LABELS,
 } from '../logic';
 import { EmptyState, SectionHeading, StatusPill } from './Common';
+import { DomainTable } from './DomainTable';
 
 function WeightEditor({
   initial,
@@ -142,82 +143,97 @@ export function ScenarioComparison({
         aside={<AutoAwesomeRounded color="primary" />}
       />
       {workflow?.scenarios.length ? (
-        <div
-          className="scenario-table-wrap"
-          tabIndex={0}
-          role="region"
-          aria-label="Comparaison des scénarios, défilement horizontal disponible"
-        >
-          <table className="scenario-table">
-            <caption className="sr-only">
-              Comparaison des options de mitigation. Sélectionnez le plan à soumettre à approbation.
-            </caption>
-            <thead>
-              <tr>
-                <th scope="col">Plan de mitigation</th>
-                <th scope="col">Service</th>
-                <th scope="col">Coût</th>
-                <th scope="col">Délai</th>
-                <th scope="col">CO₂</th>
-                <th scope="col">Risque</th>
-                <th scope="col">Score</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[...workflow.scenarios]
-                .sort((a, b) => b.score - a.score)
-                .map((scenario) => (
-                  <tr
-                    key={scenario.id}
-                    className={selectedId === scenario.id ? 'selected-scenario' : ''}
-                  >
-                    <th scope="row">
-                      <div className="scenario-name">
-                        <Radio
-                          checked={selectedId === scenario.id}
-                          disabled={
-                            pending || !scenario.eligible || workflow.status !== 'awaiting_approval'
-                          }
-                          onChange={() => onSelect(scenario.id)}
-                          name="scenario"
-                          slotProps={{ input: { 'aria-label': `Sélectionner ${scenario.name}` } }}
-                        />
-                        <div>
-                          <strong>{scenario.name}</strong>
-                          {workflow.recommended_scenario_id === scenario.id && (
-                            <span className="recommendation-tag">
-                              <AutoAwesomeRounded /> Recommandé
-                            </span>
-                          )}
-                          <p>{scenario.description}</p>
-                          {!scenario.eligible && (
-                            <span className="constraint">
-                              {scenario.constraint || 'Option non éligible'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </th>
-                    <td>
-                      <strong>{number(scenario.service_pct)} %</strong>
-                      <LinearProgress
-                        variant="determinate"
-                        value={Math.max(0, Math.min(100, scenario.service_pct))}
-                        aria-label={`Service client ${scenario.name}`}
-                      />
-                    </td>
-                    <td>{euro(scenario.cost_eur, 0)}</td>
-                    <td>{number(scenario.delay_days)} j</td>
-                    <td>{number(scenario.co2_kg)} kg</td>
-                    <td>{number(scenario.risk)}</td>
-                    <td>
-                      <span className="score-badge">{number(scenario.score)}</span>
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </div>
+        <DomainTable
+          label="Comparaison des scénarios"
+          className="scenario-table"
+          rows={workflow.scenarios}
+          rowId={(scenario) => scenario.id}
+          rowClassName={(scenario) => (selectedId === scenario.id ? 'selected-scenario' : '')}
+          initialSort={{ id: 'score', direction: 'desc' }}
+          loading={pending}
+          columns={[
+            {
+              id: 'name',
+              label: 'Plan de mitigation',
+              value: (scenario) => scenario.name,
+              searchValue: (scenario) =>
+                `${scenario.name} ${scenario.description} ${scenario.constraint}`,
+              render: (scenario, tabIndex) => (
+                <div className="scenario-name">
+                  <Radio
+                    tabIndex={tabIndex}
+                    checked={selectedId === scenario.id}
+                    disabled={
+                      pending || !scenario.eligible || workflow.status !== 'awaiting_approval'
+                    }
+                    onChange={() => onSelect(scenario.id)}
+                    name="scenario"
+                    slotProps={{ input: { 'aria-label': `Sélectionner ${scenario.name}` } }}
+                  />
+                  <div>
+                    <strong>{scenario.name}</strong>
+                    {workflow.recommended_scenario_id === scenario.id && (
+                      <span className="recommendation-tag">
+                        <AutoAwesomeRounded /> Recommandé
+                      </span>
+                    )}
+                    <p>{scenario.description}</p>
+                    {!scenario.eligible && (
+                      <span className="constraint">
+                        {scenario.constraint || 'Option non éligible'}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              id: 'service',
+              label: 'Service',
+              value: (scenario) => scenario.service_pct,
+              render: (scenario) => (
+                <div className="scenario-service">
+                  <strong>{number(scenario.service_pct)} %</strong>
+                  <LinearProgress
+                    variant="determinate"
+                    value={Math.max(0, Math.min(100, scenario.service_pct))}
+                    aria-label={`Service client ${scenario.name}`}
+                  />
+                </div>
+              ),
+            },
+            {
+              id: 'cost',
+              label: 'Coût',
+              value: (scenario) => scenario.cost_eur,
+              render: (scenario) => euro(scenario.cost_eur, 0),
+            },
+            {
+              id: 'delay',
+              label: 'Délai',
+              value: (scenario) => scenario.delay_days,
+              render: (scenario) => `${number(scenario.delay_days)} j`,
+            },
+            {
+              id: 'co2',
+              label: 'CO₂',
+              value: (scenario) => scenario.co2_kg,
+              render: (scenario) => `${number(scenario.co2_kg)} kg`,
+            },
+            {
+              id: 'risk',
+              label: 'Risque',
+              value: (scenario) => scenario.risk,
+              render: (scenario) => number(scenario.risk),
+            },
+            {
+              id: 'score',
+              label: 'Score',
+              value: (scenario) => scenario.score,
+              render: (scenario) => <span className="score-badge">{number(scenario.score)}</span>,
+            },
+          ]}
+        />
       ) : (
         <EmptyState
           title={

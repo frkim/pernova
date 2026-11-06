@@ -25,7 +25,10 @@ export default defineConfig({
     proxy: Object.fromEntries(
       ['/api', '/health', '/mcp'].map((path) => [
         path,
-        { target: 'http://127.0.0.1:8000', changeOrigin: false },
+        {
+          target: `http://127.0.0.1:${process.env.PERNOVA_E2E_API_PORT ?? '8000'}`,
+          changeOrigin: false,
+        },
       ]),
     ),
   },

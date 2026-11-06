@@ -2,6 +2,16 @@
 
 Status: Ready for Validation
 
+## Standards-alignment follow-up
+
+The 2026-11-06 [standards assessment](../docs/standards-compliance.md) records
+the current upstream commit, source changes, 187 passing unit/integration checks,
+10 passing browser/HTTP journeys, lint/build and offline Bicep evidence.
+It also records blocking repository/API gaps and the `oauthlib` advisory whose
+patched version is unavailable from CFS. This is **not full standards compliance
+or cloud validation**. Keep this plan `Ready for Validation`; the proof section
+below records the earlier implementation run.
+
 ## Scope
 
 Implement a runnable local demonstration of supply-chain multi-agent operations,
