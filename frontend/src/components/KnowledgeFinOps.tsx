@@ -12,6 +12,7 @@ import { api } from '../api';
 import type { Bootstrap, KnowledgeDocument, Workflow } from '../types';
 import { dateTime, duration, euro, number } from '../logic';
 import { EmptyState, Metric, SectionHeading } from './Common';
+import { DomainTable } from './DomainTable';
 
 export function Knowledge({
   documents,
@@ -342,32 +343,39 @@ export function FinOps({
                   </div>
                 ))}
               </div>
-              <div className="table-scroll">
-                <table className="cost-table">
-                  <caption className="sr-only">Coûts détaillés des agents</caption>
-                  <thead>
-                    <tr>
-                      <th>Agent</th>
-                      <th>Tokens</th>
-                      <th>Appels</th>
-                      <th>Coût IA</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {workflow.agents.map((agent) => (
-                      <tr key={agent.agent_id}>
-                        <th scope="row">
-                          {bootstrap.agents.find((item) => item.id === agent.agent_id)?.name ??
-                            agent.agent_id}
-                        </th>
-                        <td>{number(agent.tokens)}</td>
-                        <td>{number(agent.tool_calls)}</td>
-                        <td>{euro(agent.cost_eur)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DomainTable
+                label="Coûts détaillés des agents"
+                className="cost-table"
+                rows={workflow.agents}
+                rowId={(agent) => agent.agent_id}
+                columns={[
+                  {
+                    id: 'agent',
+                    label: 'Agent',
+                    value: (agent) =>
+                      bootstrap.agents.find((item) => item.id === agent.agent_id)?.name ??
+                      agent.agent_id,
+                  },
+                  {
+                    id: 'tokens',
+                    label: 'Tokens',
+                    value: (agent) => agent.tokens,
+                    render: (agent) => number(agent.tokens),
+                  },
+                  {
+                    id: 'calls',
+                    label: 'Appels',
+                    value: (agent) => agent.tool_calls,
+                    render: (agent) => number(agent.tool_calls),
+                  },
+                  {
+                    id: 'cost',
+                    label: 'Coût IA',
+                    value: (agent) => agent.cost_eur,
+                    render: (agent) => euro(agent.cost_eur),
+                  },
+                ]}
+              />
             </>
           ) : (
             <EmptyState title="Sans exécution, pas d’estimation inventée">

@@ -1,11 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
+import type {} from '@mui/x-data-grid/themeAugmentation';
 import { ThemeModeContext } from './theme-context';
 import type { ThemeMode } from './theme-context';
 
+function storedTheme(): ThemeMode | null {
+  try {
+    const stored = localStorage.getItem('pernova.theme');
+    return stored === 'dark' || stored === 'light' ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
 function initialTheme(): ThemeMode {
+  const stored = storedTheme();
+  if (stored) return stored;
   const prepaint = document.documentElement.dataset.theme;
   if (prepaint === 'dark' || prepaint === 'light') return prepaint;
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
@@ -18,24 +30,33 @@ function applyTheme(mode: ThemeMode) {
 
 export default function ThemeController({ children }: { children: ReactNode }) {
   const [mode, setMode] = useState<ThemeMode>(initialTheme);
+  const explicitChoice = useRef(storedTheme());
   useEffect(() => {
     const preference = window.matchMedia?.('(prefers-color-scheme: dark)');
     const change = () => {
-      try {
-        const stored = localStorage.getItem('pernova.theme');
-        if (stored === 'light' || stored === 'dark') return;
-      } catch {
-        /* System preference still works without storage. */
-      }
+      if (explicitChoice.current) return;
       const next = preference?.matches ? 'dark' : 'light';
       applyTheme(next);
       setMode(next);
     };
+    const synchronize = (event: StorageEvent) => {
+      if (event.key !== 'pernova.theme' && event.key !== null) return;
+      explicitChoice.current =
+        event.newValue === 'dark' || event.newValue === 'light' ? event.newValue : null;
+      const next = explicitChoice.current ?? (preference?.matches ? 'dark' : 'light');
+      applyTheme(next);
+      setMode(next);
+    };
     preference?.addEventListener('change', change);
-    return () => preference?.removeEventListener('change', change);
+    window.addEventListener('storage', synchronize);
+    return () => {
+      preference?.removeEventListener('change', change);
+      window.removeEventListener('storage', synchronize);
+    };
   }, []);
   const toggle = () => {
     const next = mode === 'light' ? 'dark' : 'light';
+    explicitChoice.current = next;
     applyTheme(next);
     try {
       localStorage.setItem('pernova.theme', next);
@@ -69,6 +90,15 @@ export default function ThemeController({ children }: { children: ReactNode }) {
         },
         shape: { borderRadius: 12 },
         components: {
+          MuiDataGrid: {
+            styleOverrides: {
+              root: {
+                '&& .MuiTablePagination-selectLabel': { display: 'block' },
+                '&& .MuiTablePagination-input': { display: 'inline-flex' },
+                '& .MuiTablePagination-toolbar': { flexWrap: 'wrap' },
+              },
+            },
+          },
           MuiButton: { defaultProps: { disableElevation: true } },
           MuiTextField: { defaultProps: { size: 'small' } },
           MuiSelect: { defaultProps: { size: 'small' } },

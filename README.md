@@ -1,16 +1,16 @@
 # Pernova · Supply Chain Disruption Manager
 
-Une control tower pour **anticiper une perturbation, orchestrer des agents et garder
-le contrôle de chaque décision**. Démonstration destinée aux CDO, CIO, CISO et Tech Leads :
-valeur métier, approbation humaine, gouvernance des modèles et outils MCP, traçabilité,
-knowledge base et pilotage des coûts.
+A control tower to **anticipate disruption, orchestrate agents and control every
+decision**. This synthetic demonstration covers business value, human approval,
+model and MCP tool governance, tracing, knowledge retrieval and cost controls.
+The demonstration UI is in French.
 
-## Démarrer la démonstration
+## Run locally
 
-Prérequis : **Node.js 24 LTS**, **Python 3.13**, **uv** et npm. Les dépendances sont
-verrouillées et restaurées exclusivement depuis les feeds Microsoft CFS :
-[standard package-feeds](https://github.com/frkim/ai-coding-standards/blob/main/standards/development/package-feeds.md).
-Les configurations `.npmrc`, `pip.conf` et le projet uv font partie du dépôt.
+Install **Node.js 24 LTS**, **Python 3.13**, **uv** and npm.
+Dependencies are locked and restored exclusively through Microsoft CFS
+[protected package feeds](https://github.com/frkim/ai-coding-standards/blob/main/standards/development/package-feeds.md).
+The repository includes `.npmrc`, `pip.conf` and uv index configuration.
 
 ```powershell
 npm ci
@@ -18,38 +18,40 @@ npm run setup
 npm run dev
 ```
 
-Ouvrir **http://127.0.0.1:5173**. L'API est disponible sur
-http://127.0.0.1:8000 et sa documentation sur http://127.0.0.1:8000/api/docs.
-Attendre le message `Application startup complete` côté API avant le premier chargement.
-Lancer une analyse nominale, explorer les traces, comparer les scénarios puis
-approuver ou refuser le transfert synthétique. Les variantes de démonstration
-permettent d'observer les refus de politique et la suspension d'un agent.
+Open **http://127.0.0.1:5173** after the API reports `Application startup complete`.
+The API listens at http://127.0.0.1:8000, with generated documentation at
+http://127.0.0.1:8000/api/docs.
+Start a nominal analysis, inspect traces, compare scenarios, then approve or
+reject the synthetic transfer. Negative presets demonstrate policy denials and
+agent suspension.
 
-Le mode local ne nécessite **aucun abonnement Azure, secret, appel LLM payant,
-accès SAP ou tenant Agent 365**. Les données métier, réponses agentiques et coûts
-du mode local sont synthétiques. Les garde-fous, autorisations, calculs,
-approbations, journal persistant et traces sont exécutés par l'application.
-Un état « configuré » ne signifie jamais qu'une connexion cloud a été vérifiée.
+Local mode needs **no Azure subscription, secret, paid LLM call, SAP access or
+Agent 365 tenant**. Business data, agent responses and costs are synthetic.
+The application implements the controls, authorization, calculations, approvals,
+persistent local journal and traces.
+“Configured” never means cloud connectivity has been verified.
 
-## Fonctions
+## Features
 
-| Surface | Expérience |
+| Surface | Experience |
 | --- | --- |
-| Control Tower | Incident logistique, flux de traitement et impact métier |
-| Agents et traces | Analyses parallèles, appels d'outils et arbre de spans corrélés |
-| Comparaison | Critères pondérés, contraintes de stock et décision humaine |
-| Gouvernance | Catalogue agents/modèles, politique MCP, kill switch et intégrations |
-| Knowledge | Recherche documentaire, classification et citations de sources |
-| FinOps | Tokens, coûts estimés, budget et décisions de contrôle |
-| Audit | Export JSON des preuves d'une exécution et de sa décision |
+| Control Tower | Logistics incident, workflow and business impact |
+| Agents and traces | Parallel analyses, tool calls and correlated span tree |
+| Comparison | Weighted criteria, stock constraints and human decision |
+| Governance | Agent/model inventory, MCP policy, suspension and integrations |
+| Knowledge | Document search, classification and source citations |
+| FinOps | Tokens, estimated costs, budgets and control decisions |
+| Audit | JSON evidence export for a workflow and its decision |
 
-La gouvernance Azure cible **Microsoft Foundry (new), Azure API Management,
-Application Insights/Azure Monitor et Agent 365**. Les fonctionnalités dépendantes
-du tenant, l'authentification entreprise et les contrôles de conformité doivent
-être configurés et vérifiés avant une utilisation réelle. Cette application
-ne fournit **ni certification de conformité ni système de planification de production**.
+Azure integration targets **Microsoft Foundry (new/v2), Azure API Management,
+Application Insights/Azure Monitor and Agent 365**.
+Inference uses the OpenAI v1 Responses API; project operations, if added, must
+use `azure-ai-projects` 2.x rather than classic SDKs or Assistants.
+Tenant capabilities, enterprise authentication and cloud controls require
+separate configuration and runtime verification.
+This application is **neither compliance certification nor a production planning system**.
 
-## Vérifier
+## Validate
 
 ```powershell
 npm run lint
@@ -59,31 +61,50 @@ npx --no-install playwright install chromium
 npm run test:e2e
 ```
 
-`npm run check:feeds` vérifie les sources des deux lockfiles npm et du lockfile
-Python ; CI exécute également ce contrôle. Après une mise à jour des dépendances npm,
-`npm run feeds:normalize` remplace uniquement les URLs du backing feed CFS connu
-par celles du proxy Microsoft, sans changer les versions ni les intégrités.
-Le lockfile Python conserve les téléchargements Azure Artifacts explicitement
-annoncés par l'index CFS ; ce backing feed exact est contrôlé, pas des miroirs arbitraires.
-Le navigateur Chromium est un runtime
-de test téléchargé par Playwright, pas une dépendance récupérée depuis un feed npm.
+`npm run check:feeds` verifies both npm lockfiles and the Python lockfile.
+`npm run check:standards` rejects mutable CI action pins, workflow-wide elevated
+permissions and legacy Foundry source/dependencies. Both run as part of lint in CI.
+These checks prevent specific regressions; they do not certify every convention.
+After npm dependency changes, `npm run feeds:normalize` replaces only known CFS
+backing-feed URLs with Microsoft proxy URLs, without changing versions or integrity.
+The Python lock retains downloads explicitly advertised by the CFS index from
+its exact approved Azure Artifacts backing feed.
+Chromium is a Playwright test runtime, not an npm package.
 
-## Organisation
+E2E starts its own servers and refuses to reuse an unknown running application.
+If the default ports are busy, run with free loopback ports instead of stopping
+another session's processes:
 
-```text
-backend/         API FastAPI, orchestration, politiques, données synthétiques, tests
-frontend/        Control tower React / TypeScript / Material UI
-infra/           Infrastructure et politiques Azure API Management
-docs/            Architecture, limites, gouvernance et guide de démonstration
-tests/e2e/       Parcours HTTP et navigateur Playwright
-scripts/         Vérification des feeds utilisée localement et en CI
+```powershell
+$env:PERNOVA_E2E_API_PORT = '18000'
+$env:PERNOVA_E2E_WEB_PORT = '15173'
+npm run test:e2e
 ```
 
-- [Cadrage initial](docs/supply-chain-disruption-manager.md)
-- [Contrat API et invariants métier](docs/api-contract.md)
-- [Guides par audience : démo, sécurité, Agent 365, architecture et déploiement](docs/README.md)
-- [Plan de préparation Azure](.azure/deployment-plan.md)
+## Deploy and get help
 
-Les fichiers d'état locaux et les artefacts de test sont ignorés par Git.
-Consulter `CONTRIBUTING.md` pour les contributions et `SECURITY.md` pour le
-signalement d'un problème de sécurité. Licence MIT.
+Read the [deployment guide](docs/deployment.md) before considering Azure deployment.
+The checked-in templates are undeployed; subscription, region and deployment approval
+must be supplied separately. No production readiness is implied.
+See the [standards assessment](docs/standards-compliance.md) for verified gaps and exceptions.
+For setup problems, use the repository's [issue templates](https://github.com/frkim/pernova/issues/new/choose).
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## Repository layout
+
+```text
+backend/         FastAPI, orchestration, policies, synthetic data and tests
+frontend/        React / TypeScript / Material UI control tower
+infra/           Infrastructure and Azure API Management policies
+docs/            Architecture, boundaries, governance and demonstration guide
+tests/e2e/       HTTP and browser Playwright journeys
+scripts/         Protected-feed and standards checks used locally and in CI
+```
+
+- [Original brief](docs/supply-chain-disruption-manager.md)
+- [API contract and business invariants](docs/api-contract.md)
+- [Audience guides: demonstration, security, Agent 365, architecture and deployment](docs/README.md)
+- [Azure preparation plan](.azure/deployment-plan.md)
+
+Local state and test artifacts are ignored by Git.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution rules. MIT license.

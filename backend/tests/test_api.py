@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import time
 from pathlib import Path
 
@@ -6,12 +7,38 @@ import httpx
 import jwt
 import pytest
 from backend.app.config import Config
+from backend.app.engine import Engine
 from backend.app.main import create_app
 from backend.app.models import Bootstrap, Workflow
+from backend.app.store import Store
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+
+async def test_recovery_failure_closes_store_before_startup_exits(
+    data_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stores: list[Store] = []
+
+    def store_factory(path: Path) -> Store:
+        store = Store(path)
+        stores.append(store)
+        return store
+
+    def failed_recovery(self: Engine) -> None:
+        raise RuntimeError("recovery failed")
+
+    monkeypatch.setattr("backend.app.main.Store", store_factory)
+    monkeypatch.setattr(Engine, "recover", failed_recovery)
+    app = create_app(Config(data_dir=data_dir))
+    with pytest.raises(RuntimeError, match="recovery failed"):
+        async with app.router.lifespan_context(app):
+            pytest.fail("Recovery failure must prevent startup")
+    assert len(stores) == 1
+    with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+        stores[0].db.execute("SELECT 1")
 
 
 def csp_sources(policy: str, directive_name: str) -> set[str]:
@@ -63,6 +90,7 @@ async def test_api_contract_lifecycle_and_evidence(data_dir: Path) -> None:
             assert bootstrap.policy.max_tokens == 25000
             assert bootstrap.mode == "demo"
             assert response.headers["x-content-type-options"] == "nosniff"
+            assert "strict-transport-security" not in response.headers
             assert response.headers["x-correlation-id"]
             policy = response.headers["content-security-policy"]
             assert csp_sources(policy, "connect-src") == {"'self'"}
@@ -429,6 +457,7 @@ async def test_connected_jwt_signature_roles_expiry_and_agent_context(data_dir: 
             reader = {"authorization": f"Bearer {token(['Reader'])}", "x-role": "Admin"}
             assert (await client.get("/api/bootstrap", headers=reader)).status_code == 200
             authenticated = await client.get("/api/bootstrap", headers=reader)
+            assert authenticated.headers["strict-transport-security"] == "max-age=31536000"
             policy = authenticated.headers["content-security-policy"]
             identity_sources = {"'self'", "https://login.microsoftonline.com"}
             assert csp_sources(policy, "connect-src") == identity_sources

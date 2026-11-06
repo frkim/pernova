@@ -166,7 +166,7 @@ class ArtifactTests(unittest.TestCase):
         self.assertNotIn("Microsoft.CognitiveServices/accounts", self.main)
         # Empty tool/model policies deny rather than invent cloud connections.
         self.assertIn("param mcpClientToolAllowlist object = {}", self.main)
-        self.assertIn("param allowedModelDeployments array = []", self.main)
+        self.assertIn("param allowedModelDeployments string[] = []", self.main)
 
     def test_exact_backend_and_inference_roles(self) -> None:
         expected = {
@@ -261,13 +261,36 @@ class ArtifactTests(unittest.TestCase):
             {"Authorization", "Content-Type", "traceparent"},
         )
         self.assertNotIn("*", ET.tostring(fragment, encoding="unicode"))
-        self.assertIn("param allowedBrowserOrigins array = []", self.main)
+        self.assertIn("param allowedBrowserOrigins string[] = []", self.main)
         self.assertIn("empty(allowedBrowserOrigins) ? ''", self.main)
         raw = (INFRA / "policies/control.xml").read_text(encoding="utf-8")
         self.assertLess(
             raw.index("BROWSER_CORS_POLICY"), raw.index("validate-azure-ad-token")
         )
         self.assertIn("httpHeaders: [{ name: 'Host', value: 'localhost' }]", self.main)
+
+    def test_inference_resources_and_output_share_fail_closed_gate(self) -> None:
+        self.assertIn(
+            "var foundryInferenceEnabled = !empty(foundryOpenAiV1Endpoint)"
+            " && !empty(foundryProjectEndpoint) && !empty(allowedModelDeployments)",
+            self.main,
+        )
+        self.assertEqual(self.main.count("= if (foundryInferenceEnabled)"), 3)
+        self.assertIn(
+            "output responsesBaseUrl string = foundryInferenceEnabled ?", self.main
+        )
+        self.assertIn(
+            "@maxLength(32)\nparam allowedModelDeployments string[]", self.main
+        )
+        self.assertIn("@maxLength(20)\nparam allowedBrowserOrigins string[]", self.main)
+        self.assertIn(
+            "@maxLength(100)\nparam allowedClientApplicationIds string[]", self.main
+        )
+        self.assertIn(
+            "@maxLength(50)\nparam backendEnvironment BackendEnvironmentVariable[]",
+            self.main,
+        )
+        self.assertIn("@sealed()\ntype BackendEnvironmentVariable", self.main)
 
 
 if __name__ == "__main__":

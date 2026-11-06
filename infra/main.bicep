@@ -1,6 +1,13 @@
 targetScope = 'resourceGroup'
 
+@sealed()
+type BackendEnvironmentVariable = {
+  name: string
+  value: string
+}
+
 @description('Explicitly approved Azure region; no region is selected by this template.')
+@minLength(1)
 param location string
 @allowed(['demo'])
 param environment string = 'demo'
@@ -25,20 +32,26 @@ param apiApplicationClientId string
 param apiAudience string
 @description('Explicit approved browser/workload client IDs. No wildcard and no caller-controlled x-agent identity.')
 @minLength(1)
-param allowedClientApplicationIds array
+@maxLength(100)
+param allowedClientApplicationIds string[]
 @description('Exact approved HTTPS SPA origins for APIM bearer CORS. Empty means no cross-origin browser support. Also configure PERNOVA_ALLOWED_ORIGINS in backendEnvironment.')
-param allowedBrowserOrigins array = []
+@maxLength(20)
+param allowedBrowserOrigins string[] = []
 @description('Agent workload azp/client-ID -> allowed tools array. Empty object denies all MCP calls. Synchronize with backend server-side agent registry.')
 param mcpClientToolAllowlist object = {}
 @description('Existing Foundry NEW resource OpenAI v1 base URL, copied from the resource. Empty disables the model route. No classic resources or keys.')
+@maxLength(2000)
 param foundryOpenAiV1Endpoint string = ''
-@description('Existing Foundry NEW project endpoint, for deployment evidence/configuration only; template does not deploy hosted agents.')
+@description('Existing Foundry NEW project endpoint; required with the resource v1 endpoint and nonempty model allowlist to enable inference. No hosted agents are deployed.')
+@maxLength(2048)
 param foundryProjectEndpoint string = ''
 @description('Exact model DEPLOYMENT names accepted by Responses API; empty list denies all inference.')
-param allowedModelDeployments array = []
+@maxLength(32)
+param allowedModelDeployments string[] = []
 @description('Explicit Config.from_env settings: PERNOVA_MODE=connected, PERNOVA_JWT_ISSUER/AUDIENCE/JWKS_URL, allowed hosts/origins, data directory and optional APIM inference. No secrets. See docs/deployment.md.')
 @minLength(1)
-param backendEnvironment array
+@maxLength(50)
+param backendEnvironment BackendEnvironmentVariable[]
 @description('Approved registry hostname for private images; empty uses the supplied public/anonymous image. Assign AcrPull to backend identity separately before deployment.')
 param registryServer string = ''
 @description('APIM publisher contact for this approved deployment; not committed tenant data.')
@@ -55,6 +68,8 @@ param logRetentionDays int = 30
 param applicationInsightsDisableLocalAuth bool = false
 
 var suffix = uniqueString(resourceGroup().id)
+// Partial configuration must never publish an inference route without a project.
+var foundryInferenceEnabled = !empty(foundryOpenAiV1Endpoint) && !empty(foundryProjectEndpoint) && !empty(allowedModelDeployments)
 var tags = {
   env: environment
   workload: 'pernova'
@@ -323,7 +338,7 @@ resource mcpPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = 
   dependsOn: [values, mcpOperation, rpcSchema]
 }
 
-resource modelApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = if (!empty(foundryOpenAiV1Endpoint)) {
+resource modelApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = if (foundryInferenceEnabled) {
   parent: gateway
   name: 'pernova-responses'
   properties: {
@@ -334,12 +349,12 @@ resource modelApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = if (!empty
     serviceUrl: foundryOpenAiV1Endpoint
   }
 }
-resource modelOperation 'Microsoft.ApiManagement/service/apis/operations@2024-05-01' = if (!empty(foundryOpenAiV1Endpoint)) {
+resource modelOperation 'Microsoft.ApiManagement/service/apis/operations@2024-05-01' = if (foundryInferenceEnabled) {
   parent: modelApi
   name: 'responses'
   properties: { displayName: 'Create response only', method: 'POST', urlTemplate: '/responses', responses: [] }
 }
-resource modelPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = if (!empty(foundryOpenAiV1Endpoint)) {
+resource modelPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = if (foundryInferenceEnabled) {
   parent: modelApi
   name: 'policy'
   properties: { format: 'rawxml', value: loadTextContent('policies/responses.xml') }
@@ -393,7 +408,7 @@ resource gatewayTraceDiagnostics 'Microsoft.ApiManagement/service/diagnostics@20
 output backendUrl string = 'https://${backend.properties.configuration.ingress.fqdn}'
 output controlApiUrl string = '${gateway.properties.gatewayUrl}/pernova'
 output mcpUrl string = '${gateway.properties.gatewayUrl}/pernova-mcp/'
-output responsesBaseUrl string = empty(foundryOpenAiV1Endpoint) ? '' : '${gateway.properties.gatewayUrl}/pernova-models/openai/v1/'
+output responsesBaseUrl string = foundryInferenceEnabled ? '${gateway.properties.gatewayUrl}/pernova-models/openai/v1/' : ''
 output backendIdentityClientId string = backendIdentity.properties.clientId
 output gatewayIdentityClientId string = gatewayIdentity.properties.clientId
 output existingFoundryProjectEndpoint string = foundryProjectEndpoint

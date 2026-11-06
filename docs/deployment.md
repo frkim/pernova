@@ -24,7 +24,7 @@ Only an isolated, disposable, synthetic demonstration is in scope now.
 | Identities | Distinct backend and gateway UAMIs; no Entra registrations, Graph consent, app-role assignments, Azure role assignments or broad Contributor grants |
 | APIM | Public HTTPS policy authority; Developer tier is a disposable demo choice, **not a production SLA**; subscription keys not used |
 | Telemetry | Log Analytics 30-day default, APIM gateway logs + W3C App Insights diagnostics with zero body logging; application exporter still needs integration verification |
-| Existing Foundry | Optional OpenAI v1 URL + project URL + deployment allowlist; creates no Foundry resource/project/model/hosted agent |
+| Existing Foundry | OpenAI v1 URL **and** project URL **and** nonempty deployment allowlist are required together to publish inference; creates no Foundry resource/project/model/hosted agent |
 
 This is the [Gatekeeper pattern][gatekeeper] with an important limitation:
 Direct Container Apps API ingress remains Entra-protected but reachable, so an authorized
@@ -152,6 +152,15 @@ Required parameter inputs: region, owner, cost center, immutable image, tenant/A
 app/audience, approved client IDs, backend environment array, APIM contact.
 Optional inputs: approved registry, existing Foundry resource v1 endpoint and
 project endpoint, model deployments, browser origins and agent-client-to-tool allowlist.
+The three Foundry inputs are optional **as a group**, not independently. Bicep
+omits all three model API resources and returns an empty `responsesBaseUrl` if
+any member is absent. This is a fail-closed deployment gate, not evidence that
+the supplied resource really is Foundry (new).
+
+Collection inputs are typed and bounded: at most 100 client IDs, 20 browser
+origins, 32 deployment names and 50 backend environment entries. Backend entries
+are sealed `{name: string, value: string}` objects, not arbitrary ARM fragments
+or secret references. These limits bound configuration, not runtime spending.
 
 The root Dockerfile builds Vite frontend statics into the FastAPI image.
 Local dev is Vite `127.0.0.1:5173`
@@ -260,6 +269,44 @@ No classic SDK, Assistants, threads/runs or monthly inference `api-version`.
 For project features use `azure-ai-projects` **2.x**; simple inference can use
 OpenAI Responses over REST or the standard `OpenAI` client.
 
+### Foundry v2 provenance and offline input gate
+
+Run `python infra\validate_foundry.py` using the **same environment** as
+`main.demo.bicepparam`, before parameter evaluation or any later protected
+deployment pipeline. It makes no network calls, reads no credentials and prints
+only fixed field/error descriptions, never supplied endpoint values. With all
+three Foundry inputs absent it succeeds with inference disabled. It rejects
+partial configuration, malformed/oversized/non-string/duplicate deployment
+allowlists, mismatched resource subdomains, non-HTTPS/credentialed URLs,
+ports, query strings (including `api-version`), fragments, classic project
+paths and non-v1 inference paths. It accepts the documented public Azure
+`services.ai.azure.com` and `openai.azure.com` resource hosts and only
+`services.ai.azure.com/api/projects/<project>` for projects. Sovereign clouds,
+custom endpoint domains and cross-resource project routing require a separately
+reviewed validator/topology change; this gate does not select or enable them.
+
+The script is a **required pipeline input check**, not an ARM policy: direct
+template consumers can bypass it. Bicep independently enforces typed/bounded
+collections and the three-part route gate, but cannot prove endpoint provenance.
+Before enabling inference, obtain these read-only facts from the approved
+platform owner, then validate them against the actual target in the OIDC pipeline:
+
+| Checklist | Required evidence, not inferred from a URL |
+| --- | --- |
+| AI-01 | Account resource type `Microsoft.CognitiveServices/accounts`, `kind=AIServices`, `properties.allowProjectManagement=true`; child `accounts/projects` belongs to that account, not an AML hub/project or standalone OpenAI resource |
+| AI-02 / AZ-03 | Account `properties.disableLocalAuth=true`; backend/gateway UAMI identities and narrow resource/project-scoped built-in Foundry data-plane grants appropriate to each endpoint; no keys or broad workload Owner/Contributor |
+| AI-03 | Standard OpenAI Responses client for this inference-only adapter; future project/agent features use stable `azure-ai-projects` **2.x**, `agents.create_version()` / `PromptAgentDefinition` and Responses/conversations/items, never Assistants/threads/runs |
+| AI-04 | Approved account location supports both Responses API and Foundry Agent Service, with the selected model deployment available and quotas verified |
+| AI-05 | Feature-specific preview ADR where applicable; no managed-agent, memory or IQ preview is implicitly adopted |
+
+The [current official SDK overview][foundry-sdk], retrieved 2026-11-06, lists
+stable Python project SDK **2.3.0 or later** and OpenAI **3.0.0 or later** for its
+2.x project examples. This is a researched baseline, not a new unbounded package
+specification: research and pin the then-current stable release through CFS
+before adding project operations. This lane adds no SDK because the current
+adapter does not call project/agent APIs. An endpoint output, passing local
+validator or `configured` UI label cannot satisfy these live evidence gates.
+
 ## Offline validation (safe now)
 
 Run from the repository root with the **already installed** CLI:
@@ -267,7 +314,8 @@ Run from the repository root with the **already installed** CLI:
 ```powershell
 az bicep lint --file infra\main.bicep
 az bicep build --file infra\main.bicep --stdout
-python -m unittest discover -s infra/tests -v
+python infra\validate_foundry.py
+python -m unittest discover -s infra\tests -v
 ```
 
 Do not install/upgrade tools, choose a subscription, log in, run `validate`,
@@ -277,7 +325,8 @@ categories, image pull, Easy Auth behavior or network connectivity.
 
 The standard-library artifact tests check auth/claim declarations, named-value
 references, explicit schema wiring, bounded options, identity/header controls and
-demo topology limitations. They are static regression checks, **not live APIM
+demo topology limitations, plus negative Foundry parameter inputs. They are
+static regression checks, **not live APIM
 policy-expression or Entra authorization tests**.
 
 After **separate cloud approval**, the platform owner uses a protected OIDC
@@ -327,3 +376,4 @@ compensation. See [ADRs](adr/002-local-persistence-and-contract.md).
 [ingestion-auth]: https://learn.microsoft.com/en-us/azure/azure-monitor/app/azure-ad-authentication
 [aca-auth-config]: https://learn.microsoft.com/en-us/azure/templates/microsoft.app/containerapps/authconfigs
 [easy-auth-paths]: https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-file-based
+[foundry-sdk]: https://learn.microsoft.com/en-us/azure/foundry/how-to/develop/sdk-overview

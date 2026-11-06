@@ -75,10 +75,10 @@ def create_app(config: Config | None = None) -> FastAPI:
             settings.step_delay,
             inference=ResponsesInference(settings) if settings.apim_endpoint else None,
         )
-        service.recover()
-        app.state.engine = service
-        app.state.mcp = MCP(service)
         try:
+            service.recover()
+            app.state.engine = service
+            app.state.mcp = MCP(service)
             yield
         finally:
             await service.close()

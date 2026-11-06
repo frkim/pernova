@@ -42,6 +42,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS workflows (
                 id TEXT PRIMARY KEY, created_at TEXT NOT NULL, body TEXT NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS workflows_created_at_id
+                ON workflows(created_at DESC, id);
             CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS inventory (
                 workflow_id TEXT NOT NULL REFERENCES workflows(id), country TEXT NOT NULL,

@@ -4,10 +4,15 @@
 - Date: 2026-11-06. Review: before connected release or 2026-12-06.
 - Decision owner: application/architecture owner; no enterprise architecture sign-off implied.
 
-## Context and decision
+## Context
 
 The coding standard defaults to Next.js or Vue with Material UI; the original
-brief suggested React/Fluent UI. Use **Vite + React + TypeScript + MUI** with a
+brief suggested React/Fluent UI. The control tower needs a reproducible local
+workflow without provisioning or a server-rendering requirement.
+
+## Decision
+
+Use **Vite + React + TypeScript + MUI** with a
 separate FastAPI API. This control tower is a client-side operational SPA, not an
 SSR/SEO application. The root image builds statics and serves same origin.
 MUI follows the coding-standard design system; avoid a second component kit.
@@ -17,7 +22,14 @@ execution are deterministic. This is not proof of Foundry-hosted orchestration.
 Optional connected inference uses **Foundry NEW Responses API**, never Assistants
 or classic SDKs; adding project/hosted-agent features requires separate review.
 
-## WAF and alternatives
+Use the supported Python 3.13 runtime consistently in `.python-version`, README,
+CI and Docker, with Node 24 LTS for frontend tooling. Retaining Python 3.13 rather
+than immediately adopting the latest Python minor is a bounded compatibility
+exception: validate the locked telemetry, identity, inference and container
+dependencies before a runtime migration. This exception shares the review/expiry
+above and does not permit an end-of-support runtime.
+
+## Consequences
 
 | Pillar | Consequence |
 | --- | --- |
@@ -27,7 +39,12 @@ or classic SDKs; adding project/hosted-agent features requires separate review.
 | Cost optimization | One disposable app image; avoid unnecessary hosting/platform dependencies |
 | Operational excellence | Separate API contract and frontend build; root image combines packaging with E2E validation. Vite proxy is local development, not deployment auth |
 
+## Alternatives considered
+
 Next.js would provide server rendering/BFF capabilities at added framework/runtime
 complexity; adopt if enterprise session/auth/SSR requirements justify it. This
 exception expires at review; do not use it to waive accessibility, themes,
 table navigation, quality gates or identity requirements.
+Adopting the latest Python minor immediately would reduce version lag but would
+require an approved-feed dependency and image compatibility exercise; a runtime
+bump without those checks is rejected for the rehearsal.

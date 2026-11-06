@@ -8,8 +8,9 @@ data to local fixtures, prompts, logs, tests or issues.
 
 Repository security contact: **@frkim**, repository owner.
 Use [GitHub private vulnerability reporting](https://github.com/frkim/pernova/security/advisories/new)
-when enabled. Reporting availability is a repository setting and is **unverified
-by this implementation lane**. If unavailable, contact @frkim to arrange an
+when enabled. The read-only settings check on 2026-11-06 found private reporting
+**disabled**; see the [standards assessment](docs/standards-compliance.md).
+Until the owner enables it, contact @frkim to arrange an
 approved private channel **without posting exploit details, credentials or data
 in public issues**. No invented email address or response SLA is claimed.
 
@@ -29,6 +30,8 @@ working days after recovery.
 Required settings (not enabled by a document): branch protection/review, CodeQL,
 secret scanning with push protection, Dependabot and private vulnerability
 reporting. Releases need dependency/image scanning and an SBOM.
+Repository settings can change independently of this document; verify them again
+before a release.
 
 See [threat model](docs/threat-model.md), [control matrix](docs/enterprise-governance.md),
 [incident runbook](docs/operations-runbook.md), and

@@ -14,6 +14,7 @@ what can actually be demonstrated.
 | Tenant / IAM / Agent 365 owner | [Actual registration, access and capability prerequisites](agent-365-onboarding.md) |
 | Architecture review | ADR [SPA](adr/001-spa-and-deterministic-orchestration.md), [SQLite/contract](adr/002-local-persistence-and-contract.md), [previews](adr/003-preview-and-connected-capability-gates.md), [telemetry/ingress exceptions](adr/004-telemetry-and-demo-topology-exceptions.md) |
 | Implementer / reviewer | [Authoritative Learn and coding-standards research](microsoft-guidance.md), [infrastructure validation](validation-infra-governance.md) |
+| Standards / repository owner | [Upstream standards assessment, corrections and unresolved gates](standards-compliance.md) |
 
 **Truth labels:** local synthetic behavior ≠ verified Entra; configured ≠ connected;
 template ≠ deployed; lexical fixture search ≠ source-ACL retrieval/Foundry IQ;

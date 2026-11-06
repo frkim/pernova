@@ -40,6 +40,46 @@ main:focus-visible {
   outline: 3px solid #9378ed;
   outline-offset: 4px;
 }
+.domain-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+.domain-table-toolbar .MuiTextField-root {
+  flex: 1 1 220px;
+}
+.domain-table {
+  min-width: 0;
+}
+.domain-table-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.domain-table-filters .MuiTextField-root {
+  flex: 1 1 120px;
+}
+.domain-data-grid {
+  height: 480px;
+  width: 100%;
+}
+.domain-data-grid .MuiDataGrid-cell {
+  display: flex;
+  align-items: center;
+  white-space: normal;
+  padding-block: 16px;
+}
+.domain-data-grid .MuiDataGrid-cell:focus-within,
+.domain-data-grid .MuiDataGrid-columnHeader:focus-within {
+  outline: 3px solid var(--purple);
+  outline-offset: -3px;
+}
+.domain-table .MuiTablePagination-toolbar {
+  flex-wrap: wrap;
+}
 a {
   color: var(--purple);
 }
@@ -1132,8 +1172,10 @@ html[data-theme='dark'] .supervisor-bar > div > span {
 .scenario-table {
   width: 100%;
   border-spacing: 0;
-  min-width: 670px;
-  font-size: 10px;
+  min-width: 0;
+}
+.scenario-service {
+  width: 100%;
 }
 .scenario-table thead th {
   color: #8b94a7;

@@ -78,4 +78,37 @@ describe('accessible human approval', () => {
     expect(screen.getByRole('button', { name: 'Recalculer les scénarios' })).toBeEnabled();
     expect(rescore).not.toHaveBeenCalled();
   });
+
+  it('filters scenario options without changing the selected approval target', () => {
+    const select = vi.fn();
+    render(
+      <ScenarioComparison
+        workflow={{
+          ...workflowFixture,
+          scenarios: [
+            ...workflowFixture.scenarios,
+            {
+              ...workflowFixture.scenarios[0],
+              id: 'alternative',
+              name: 'Plan alternatif',
+              score: 70,
+            },
+          ],
+        }}
+        selectedId="belgium"
+        pending={false}
+        onSelect={select}
+        onRescore={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText('Filtrer Plan de mitigation'), {
+      target: { value: 'alternatif' },
+    });
+    expect(screen.queryByRole('radio', { name: 'Sélectionner Transfert Belgique' })).toBeNull();
+    expect(select).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('radio', { name: 'Sélectionner Plan alternatif' }));
+    expect(select).toHaveBeenCalledWith('alternative');
+    fireEvent.click(screen.getByRole('button', { name: 'Effacer les filtres' }));
+    expect(screen.getByRole('radio', { name: 'Sélectionner Transfert Belgique' })).toBeChecked();
+  });
 });
