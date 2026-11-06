@@ -1,0 +1,70 @@
+<policies>
+  <inbound>
+    <base />
+    <validate-azure-ad-token tenant-id="{{pernova-tenant-id}}" header-name="Authorization" output-token-variable-name="caller" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized">
+      <audiences><audience>{{pernova-api-audience}}</audience></audiences>
+      <required-claims>
+        <claim name="ver" match="all"><value>2.0</value></claim>
+        <claim name="roles" match="any"><value>Agent</value></claim>
+      </required-claims>
+    </validate-azure-ad-token>
+    <set-variable name="client-id" value="@(((Jwt)context.Variables[&quot;caller&quot;]).Claims.GetValueOrDefault(&quot;azp&quot;, &quot;&quot;))" />
+    <set-variable name="allowed-tools" value="@{
+      var clients = JArray.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(&quot;{{pernova-client-ids-json}}&quot;)));
+      var map = JObject.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(&quot;{{pernova-mcp-allowlist-json}}&quot;)));
+      var client = (string)context.Variables[&quot;client-id&quot;];
+      if (!clients.Values&lt;string&gt;().Contains(client)) { return &quot;[]&quot;; }
+      var tools = map[client] as JArray;
+      return tools == null ? &quot;[]&quot; : tools.ToString(Newtonsoft.Json.Formatting.None);
+    }" />
+    <choose>
+      <when condition="@(JArray.Parse((string)context.Variables[&quot;allowed-tools&quot;]).Count == 0)">
+        <return-response><set-status code="403" reason="Agent not authorized" /></return-response>
+      </when>
+    </choose>
+    <rate-limit-by-key calls="10" renewal-period="30" counter-key="@(&quot;mcp:&quot; + (string)context.Variables[&quot;client-id&quot;])" />
+    <validate-content unspecified-content-type-action="prevent" max-size="32768" size-exceeded-action="prevent" errors-variable-name="body-errors">
+      <content type="application/json" validate-as="json" schema-id="pernova-json-rpc" action="prevent" />
+    </validate-content>
+    <set-variable name="rpc-allowed" value="@{
+      try {
+        var body = context.Request.Body.As&lt;JObject&gt;(preserveContent: true);
+        if ((string)body[&quot;jsonrpc&quot;] != &quot;2.0&quot;) { return false; }
+        var method = (string)body[&quot;method&quot;];
+        if (method == &quot;initialize&quot; || method == &quot;tools/list&quot;) { return true; }
+        if (method != &quot;tools/call&quot;) { return false; }
+        var tool = (string)body[&quot;params&quot;]?[&quot;name&quot;];
+        return tool != null &amp;&amp; JArray.Parse((string)context.Variables[&quot;allowed-tools&quot;]).Values&lt;string&gt;().Contains(tool);
+      } catch { return false; }
+    }" />
+    <choose>
+      <when condition="@(!(bool)context.Variables[&quot;rpc-allowed&quot;])">
+        <return-response><set-status code="403" reason="MCP method or tool denied" /></return-response>
+      </when>
+    </choose>
+    <set-variable name="rpc-method" value="@((string)context.Request.Body.As&lt;JObject&gt;(preserveContent: true)[&quot;method&quot;])" />
+    <set-header name="x-agent" exists-action="delete" />
+    <set-header name="x-agent-id" exists-action="delete" />
+    <set-header name="x-ms-client-principal" exists-action="delete" />
+    <set-backend-service base-url="{{pernova-backend-url}}" />
+    <rewrite-uri template="/mcp" copy-unmatched-params="false" />
+  </inbound>
+  <backend><forward-request timeout="30" /></backend>
+  <outbound>
+    <base />
+    <choose>
+      <when condition="@((string)context.Variables.GetValueOrDefault(&quot;rpc-method&quot;, &quot;&quot;) == &quot;tools/list&quot; &amp;&amp; context.Response.StatusCode == 200)">
+        <set-body>@{
+          var body = context.Response.Body.As&lt;JObject&gt;(preserveContent: true);
+          var tools = body["result"]?["tools"] as JArray;
+          if (tools != null) {
+            var allowed = JArray.Parse((string)context.Variables["allowed-tools"]).Values&lt;string&gt;().ToArray();
+            body["result"]["tools"] = new JArray(tools.Where(t =&gt; allowed.Contains((string)t["name"])));
+          }
+          return body.ToString(Newtonsoft.Json.Formatting.None);
+        }</set-body>
+      </when>
+    </choose>
+  </outbound>
+  <on-error><base /></on-error>
+</policies>

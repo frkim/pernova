@@ -1,0 +1,9 @@
+# Repository owner is known; no invented tenant teams.
+# Branch rules requiring code-owner review must be enabled separately.
+* @frkim
+/infra/ @frkim
+/docs/ @frkim
+/SECURITY.md @frkim
+/CONTRIBUTING.md @frkim
+/AGENTS.md @frkim
+/.github/ @frkim

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "required": ["model", "input", "max_output_tokens", "store"],
+  "properties": {
+    "model": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "input": { "type": "string", "minLength": 1, "maxLength": 16000 },
+    "instructions": { "type": "string", "maxLength": 2048 },
+    "tools": { "type": "array", "maxItems": 0 },
+    "max_output_tokens": { "type": "integer", "minimum": 1, "maximum": 2048 },
+    "store": { "type": "boolean", "enum": [false] },
+    "stream": { "type": "boolean", "enum": [false] },
+    "background": { "type": "boolean", "enum": [false] }
+  },
+  "additionalProperties": false
+}

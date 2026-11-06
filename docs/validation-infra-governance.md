@@ -1,0 +1,65 @@
+# Infrastructure/governance validation
+
+Date: **2026-11-06**. Scope: owned `infra/`, new governance/architecture docs and
+repository templates only. Application and browser runtime verification is separate.
+
+## Passed
+
+| Check | Result / boundary |
+| --- | --- |
+| `az bicep build --file infra\main.bicep --stdout` | Exit 0 using installed Bicep **0.47.16**; no generated ARM file in repository |
+| `az bicep lint --file infra\main.bicep` | Exit 0; one narrowly documented diagnostic-settings API-version exception in ADR 003 |
+| `python -m unittest discover -s infra/tests -v` | **12 static artifact tests passed**, including actual backend config-name/payload/role harmonization and opt-in bearer CORS; no Azure/network/dependency installation required |
+| Installed backend `ruff check infra/tests` and `ruff format --check infra/tests` | Passed; reused existing tool, no package restore |
+| Existing workstation `jsonschema` Draft4Validator | Both schemas valid; Responses **4 positive + 17 negative**, including actual backend instructions/512/empty-tools payload, and MCP **3 positive + 4 negative** probes passed |
+| XML / JSON parse | All three policy XML files, CORS fragment, JSON schemas and Bicep config parse |
+| Relative Markdown links and Bicep `loadTextContent` paths | Resolve within repository |
+| `git diff --check` | Passed for tracked workspace diff; new artifacts additionally parsed/read |
+| Feed-reference review | Owned configs/examples reference protected CFS feeds; no public-registry fallback introduced |
+
+The schema probes used synthetic test payloads only, with the already available
+validator. They test **payload shape**, not deployed-model allowlists, C# APIM
+expression execution, provider behavior or runtime authorization. Static tests
+likewise do not prove Entra or cloud control effectiveness.
+
+## Not run / not verified
+
+- **Docker build/runtime:** root image supplied, workstation Docker daemon
+  unavailable. Non-root/path/probe behavior is not runtime-proven.
+- **Bicep parameter-file evaluation:** requires approved environment inputs;
+  no fake tenant/resource IDs or selected region were committed to make it pass.
+- **ARM validate / what-if / deployment:** intentionally not run. No subscription
+  selection, login, provisioning or tenant grants.
+- **APIM runtime:** schema import/expression compilation, rates/quotas, role/claim
+  checks, identity forwarding, diagnostic categories, endpoint/SKU/network and
+  real Responses token accounting still require approved target probes.
+- **ACA shell/API boundary:** static regression checks restrict anonymous paths
+  to the shell/assets/health allowlist and reject API/MCP patterns. Actual
+  `/assets/*` matching, anonymous shell load and unauthenticated API/MCP 401
+  remain deployment acceptance tests; no resource was deployed for this change.
+- **Backend environment / roles:** harmonized against `Config.from_env`,
+  `security.py`, `main.py`, `inference.py` and bootstrap. Actual configured
+  tenant grants/tokens and cloud runtime remain unverified; documentation of
+  supported settings does not make deployment a working identity integration.
+- **Connected browser:** optional MSAL popup + silent token acquisition with
+  memory-only cache is implemented and its exact Vite settings documented.
+  Tenant SPA/API registration, redirect URI, delegated scope, app roles/consent,
+  actual connectivity and browser runtime tests remain unverified. Easy Auth
+  does not automatically supply backend JWT Authorization to `fetch`.
+  Same-origin `/api/...` fetches do not automatically route through APIM.
+- **E2E traces:** application Azure Monitor export is implemented using its
+  connection string and required UAMI credential; OTLP remains optional.
+  Resource-scoped Monitoring Metrics Publisher authorization, actual ingestion,
+  approval actor-hash attribution/redaction and incoming W3C parent linkage
+  remain unverified. APIM instrumentation-key diagnostics still require
+  `DisableLocalAuth=false` unless a compatible alternative is proven.
+- **Agent 365:** tenant enabled status, registration, licensing, consent, real
+  inventory/telemetry/access and Work IQ are all unverified/not connected.
+- **Repository settings:** branch protection, CodeQL, push protection, private
+  disclosure and Dependabot settings require owner evidence; templates do not
+  enable them.
+- **Application/backend/UI E2E:** separate runtime test evidence is required;
+  no results are inferred from static infrastructure checks.
+
+See [deployment gates](deployment.md), [negative acceptance probes](gateway-controls.md)
+and [enterprise evidence owners](enterprise-governance.md).

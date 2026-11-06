@@ -1,0 +1,34 @@
+name: Architecture or governance change
+description: Propose a bounded change with explicit requirements and evidence
+title: "chore: "
+body:
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements and accountable ownership
+      description: Business outcome, SLA/load/RTO/RPO, security/data residency, budget and operational owner. Name unknowns, do not assume them.
+    validations:
+      required: true
+  - type: textarea
+    id: decisions
+    attributes:
+      label: Decision, official sources and WAF trade-offs
+      description: Security, reliability, performance, cost and operations; ADR/deviation/preview review date.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Acceptance tests and connection state
+      description: Distinguish local/template/unverified/connected-tested, denial tests, recovery and synthetic cost assumptions.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Change boundaries
+      options:
+        - label: No secrets or real personal/business data included.
+          required: true
+        - label: Cloud deployment or tenant grants require a separate approved target and change request.
+          required: true

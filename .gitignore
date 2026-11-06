@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Application and implementation artifacts
+node_modules/
+frontend/dist/
+data/
+tmp/
+playwright-report/
+test-results/
+!.env.example
+.azure/validate-status.json

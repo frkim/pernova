@@ -1,0 +1,30 @@
+version: 2
+registries:
+  npm-cfs:
+    type: npm-registry
+    url: https://packagefeedproxy.microsoft.io/npm/
+    replaces-base: true
+  python-cfs:
+    type: python-index
+    url: https://packagefeedproxy.microsoft.io/pypi/simple
+    replaces-base: true
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    registries: [npm-cfs]
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    registries: [npm-cfs]
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    registries: [python-cfs]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

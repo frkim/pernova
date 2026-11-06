@@ -1,0 +1,14 @@
+<cors allow-credentials="false" terminate-unmatched-request="true">
+  <allowed-origins>
+    <!-- APPROVED_BROWSER_ORIGINS -->
+  </allowed-origins>
+  <allowed-methods preflight-result-max-age="300">
+    <method>GET</method><method>POST</method><method>PUT</method>
+  </allowed-methods>
+  <allowed-headers>
+    <header>Authorization</header><header>Content-Type</header><header>traceparent</header>
+  </allowed-headers>
+  <expose-headers>
+    <header>X-Correlation-ID</header><header>Retry-After</header>
+  </expose-headers>
+</cors>
