@@ -14,6 +14,41 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 
+def csp_sources(policy: str, directive_name: str) -> set[str]:
+    for directive in policy.split(";"):
+        parts = directive.split()
+        if parts and parts[0] == directive_name:
+            return set(parts[1:])
+    raise AssertionError(f"Missing CSP directive: {directive_name}")
+
+
+@pytest.mark.parametrize(
+    ("directive", "policy"),
+    [
+        (
+            "connect-src",
+            "connect-src 'self' https://login.microsoftonline.com.attacker.example; "
+            "frame-src 'self' https://login.microsoftonline.com",
+        ),
+        (
+            "frame-src",
+            "connect-src 'self' https://login.microsoftonline.com; "
+            "frame-src 'self' https://attacker.example/https://login.microsoftonline.com",
+        ),
+        (
+            "connect-src",
+            "connect-src 'self'; frame-src 'self' https://login.microsoftonline.com",
+        ),
+        (
+            "frame-src",
+            "connect-src 'self' https://login.microsoftonline.com; frame-src 'self'",
+        ),
+    ],
+)
+def test_csp_sources_reject_misleading_origins_and_directives(directive: str, policy: str) -> None:
+    assert csp_sources(policy, directive) != {"'self'", "https://login.microsoftonline.com"}
+
+
 async def test_api_contract_lifecycle_and_evidence(data_dir: Path) -> None:
     app = create_app(Config(data_dir=data_dir, step_delay=0))
     async with app.router.lifespan_context(app):
@@ -29,7 +64,9 @@ async def test_api_contract_lifecycle_and_evidence(data_dir: Path) -> None:
             assert bootstrap.mode == "demo"
             assert response.headers["x-content-type-options"] == "nosniff"
             assert response.headers["x-correlation-id"]
-            assert "login.microsoftonline.com" not in response.headers["content-security-policy"]
+            policy = response.headers["content-security-policy"]
+            assert csp_sources(policy, "connect-src") == {"'self'"}
+            assert csp_sources(policy, "frame-src") == {"'self'"}
             foundry = next(i for i in bootstrap.integrations if i.id == "foundry")
             assert foundry.status == "not_connected"
             response = await client.post("/api/workflows", json={"preset": "nominal"})
@@ -392,10 +429,10 @@ async def test_connected_jwt_signature_roles_expiry_and_agent_context(data_dir: 
             reader = {"authorization": f"Bearer {token(['Reader'])}", "x-role": "Admin"}
             assert (await client.get("/api/bootstrap", headers=reader)).status_code == 200
             authenticated = await client.get("/api/bootstrap", headers=reader)
-            assert (
-                "https://login.microsoftonline.com"
-                in authenticated.headers["content-security-policy"]
-            )
+            policy = authenticated.headers["content-security-policy"]
+            identity_sources = {"'self'", "https://login.microsoftonline.com"}
+            assert csp_sources(policy, "connect-src") == identity_sources
+            assert csp_sources(policy, "frame-src") == identity_sources
             assert (await client.post("/api/workflows", json={}, headers=reader)).status_code == 403
             operator = {"authorization": f"Bearer {token(['Operator'])}"}
             started = (await client.post("/api/workflows", json={}, headers=operator)).json()
