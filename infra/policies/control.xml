@@ -1,0 +1,42 @@
+<policies>
+  <inbound>
+    <base />
+    <!-- BROWSER_CORS_POLICY -->
+    <validate-azure-ad-token tenant-id="{{pernova-tenant-id}}" header-name="Authorization" output-token-variable-name="caller" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized">
+      <audiences><audience>{{pernova-api-audience}}</audience></audiences>
+      <required-claims>
+        <claim name="ver" match="all"><value>2.0</value></claim>
+        <claim name="roles" match="any">
+          <value>Reader</value><value>Operator</value><value>Approver</value><value>SecurityAdmin</value><value>Admin</value>
+        </claim>
+      </required-claims>
+    </validate-azure-ad-token>
+    <set-variable name="client-id" value="@(((Jwt)context.Variables[&quot;caller&quot;]).Claims.GetValueOrDefault(&quot;azp&quot;, &quot;&quot;))" />
+    <choose>
+      <when condition="@(!JArray.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(&quot;{{pernova-client-ids-json}}&quot;))).Values&lt;string&gt;().Contains((string)context.Variables[&quot;client-id&quot;]))">
+        <return-response><set-status code="403" reason="Unapproved client" /></return-response>
+      </when>
+    </choose>
+    <rate-limit-by-key calls="60" renewal-period="60" counter-key="@(&quot;control:&quot; + ((Jwt)context.Variables[&quot;caller&quot;]).Claims.GetValueOrDefault(&quot;oid&quot;, &quot;missing&quot;))" />
+    <set-variable name="backend-path" value="@(context.Request.OriginalUrl.Path.Substring(&quot;/pernova&quot;.Length))" />
+    <choose>
+      <!-- Never expose /mcp through the wildcard control API and bypass its policy. -->
+      <when condition="@(!((string)context.Variables[&quot;backend-path&quot;]).StartsWith(&quot;/api/&quot;) &amp;&amp; (string)context.Variables[&quot;backend-path&quot;] != &quot;/health/live&quot; &amp;&amp; (string)context.Variables[&quot;backend-path&quot;] != &quot;/health/ready&quot;)">
+        <return-response><set-status code="404" reason="Not found" /></return-response>
+      </when>
+    </choose>
+    <set-header name="x-agent" exists-action="delete" />
+    <set-header name="x-agent-id" exists-action="delete" />
+    <set-header name="x-ms-client-principal" exists-action="delete" />
+    <!-- Preserve Authorization and traceparent; backend independently validates identity and trace syntax. -->
+    <set-backend-service base-url="{{pernova-backend-url}}" />
+    <rewrite-uri template="@((string)context.Variables[&quot;backend-path&quot;])" copy-unmatched-params="true" />
+  </inbound>
+  <backend><forward-request timeout="60" buffer-response="false" /></backend>
+  <outbound>
+    <base />
+    <set-header name="X-Content-Type-Options" exists-action="override"><value>nosniff</value></set-header>
+    <set-header name="Strict-Transport-Security" exists-action="override"><value>max-age=31536000</value></set-header>
+  </outbound>
+  <on-error><base /></on-error>
+</policies>

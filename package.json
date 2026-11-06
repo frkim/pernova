@@ -1,0 +1,24 @@
+{
+  "name": "pernova-control-tower",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Governed supply-chain agent demonstration",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "concurrently --kill-others --names API,WEB \"uv run --project backend uvicorn backend.app.main:app --host 127.0.0.1 --port 8000\" \"npm --prefix frontend run dev -- --host 127.0.0.1 --port 5173 --strictPort\"",
+    "start": "uv run --project backend uvicorn backend.app.main:app --host 127.0.0.1 --port 8000",
+    "build": "npm --prefix frontend run build",
+    "lint": "node scripts/check-feeds.mjs && uv run --project backend ruff check backend && uv run --project backend ruff format --check backend && uv run --project backend mypy -p backend.app && npm --prefix frontend run lint && npm --prefix frontend run format:check",
+    "test": "uv run --project backend pytest backend/tests && python -m unittest discover -s infra/tests -v && npm --prefix frontend test",
+    "test:e2e": "playwright test",
+    "setup": "uv sync --project backend --locked && npm --prefix frontend ci",
+    "check:feeds": "node scripts/check-feeds.mjs",
+    "feeds:normalize": "node scripts/protect-lockfiles.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "concurrently": "10.0.6"
+  }
+}

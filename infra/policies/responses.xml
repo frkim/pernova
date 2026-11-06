@@ -1,0 +1,57 @@
+<policies>
+  <inbound>
+    <base />
+    <validate-azure-ad-token tenant-id="{{pernova-tenant-id}}" header-name="Authorization" output-token-variable-name="caller" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized">
+      <audiences><audience>{{pernova-api-audience}}</audience></audiences>
+      <required-claims>
+        <claim name="ver" match="all"><value>2.0</value></claim>
+        <claim name="azp" match="all"><value>{{pernova-backend-client-id}}</value></claim>
+        <claim name="roles" match="any"><value>Inference</value></claim>
+      </required-claims>
+    </validate-azure-ad-token>
+    <rate-limit-by-key calls="20" renewal-period="60" counter-key="@(&quot;responses:&quot; + ((Jwt)context.Variables[&quot;caller&quot;]).Claims.GetValueOrDefault(&quot;oid&quot;, &quot;missing&quot;))" />
+    <validate-content unspecified-content-type-action="prevent" max-size="32768" size-exceeded-action="prevent" errors-variable-name="body-errors">
+      <content type="application/json" validate-as="json" schema-id="pernova-responses" action="prevent" />
+    </validate-content>
+    <set-variable name="request-approved" value="@{
+      try {
+        var body = context.Request.Body.As&lt;JObject&gt;(preserveContent: true);
+        if (body[&quot;model&quot;]?.Type != JTokenType.String) { return false; }
+        if (!JArray.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(&quot;{{pernova-models-json}}&quot;))).Values&lt;string&gt;().Contains((string)body[&quot;model&quot;])) { return false; }
+        if (body[&quot;max_output_tokens&quot;]?.Type != JTokenType.Integer) { return false; }
+        var max = (int)body[&quot;max_output_tokens&quot;];
+        if (max &lt; 1 || max &gt; 2048) { return false; }
+        // No remote tools, saved server state, background work, or streamed accounting on this route.
+        if (body[&quot;store&quot;]?.Type != JTokenType.Boolean || (bool)body[&quot;store&quot;]) { return false; }
+        if (body[&quot;stream&quot;] != null &amp;&amp; (body[&quot;stream&quot;].Type != JTokenType.Boolean || (bool)body[&quot;stream&quot;])) { return false; }
+        if (body[&quot;background&quot;] != null &amp;&amp; (body[&quot;background&quot;].Type != JTokenType.Boolean || (bool)body[&quot;background&quot;])) { return false; }
+        // The backend explicitly sends tools=[]; permit that shape but never nonempty tools.
+        if (body[&quot;tools&quot;] != null) {
+          var tools = body[&quot;tools&quot;] as JArray;
+          if (tools == null || tools.Count != 0) { return false; }
+        }
+        foreach (var key in new [] { &quot;tool_choice&quot;, &quot;previous_response_id&quot;, &quot;conversation&quot;, &quot;agent&quot; }) {
+          if (body[key] != null) { return false; }
+        }
+        return body[&quot;input&quot;] != null;
+      } catch { return false; }
+    }" />
+    <choose>
+      <when condition="@(!(bool)context.Variables[&quot;request-approved&quot;])">
+        <return-response><set-status code="403" reason="Model or request policy denied" /></return-response>
+      </when>
+    </choose>
+    <!-- Current Microsoft Learn documents Responses API support; counting is not an exact spend reservation. -->
+    <llm-token-limit counter-key="@(&quot;pernova-inference:&quot; + ((Jwt)context.Variables[&quot;caller&quot;]).Claims.GetValueOrDefault(&quot;oid&quot;, &quot;missing&quot;))" tokens-per-minute="25000" token-quota="100000" token-quota-period="Daily" estimate-prompt-tokens="false" tokens-consumed-header-name="x-pernova-tokens" />
+    <set-header name="x-agent" exists-action="delete" />
+    <set-header name="x-agent-id" exists-action="delete" />
+    <set-header name="api-key" exists-action="delete" />
+    <set-backend-service base-url="{{pernova-foundry-v1-url}}" />
+    <rewrite-uri template="/responses" copy-unmatched-params="false" />
+    <authentication-managed-identity resource="https://ai.azure.com" client-id="{{pernova-gateway-client-id}}" />
+    <!-- Existing valid W3C traceparent is forwarded by APIM; no fabricated trace IDs or prompt logging. -->
+  </inbound>
+  <backend><forward-request timeout="60" /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>

@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "required": ["jsonrpc", "id", "method"],
+  "properties": {
+    "jsonrpc": { "type": "string", "enum": ["2.0"] },
+    "id": { "type": ["string", "integer"], "maxLength": 128 },
+    "method": { "type": "string", "enum": ["initialize", "tools/list", "tools/call"] },
+    "params": { "type": "object" }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,26 @@
+name: Bug report
+description: Report a reproducible non-sensitive demo defect
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Security vulnerability? Use SECURITY.md and private reporting. Never attach tokens, PII, real business data or unredacted prompts."
+  - type: textarea
+    id: observed
+    attributes:
+      label: Expected versus observed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sanitized reproduction
+      description: Commit, local/demo versus connected mode, preset, and minimal steps. Do not send credentials.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Validation and sanitized evidence
+      description: Test outcome/correlation ID, unavailable checks, and regression-test suggestion.
