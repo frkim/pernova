@@ -86,6 +86,19 @@ npm run test:e2e
 Read the [deployment guide](docs/deployment.md) before considering Azure deployment.
 The checked-in templates are undeployed; subscription, region and deployment approval
 must be supplied separately. No production readiness is implied.
+The prepared, **never-run** `.github/workflows/deploy-azure.yml` is a manual,
+`main`-only OIDC image update for an **existing** approved connected-mode Container
+App (`api`, one replica), not resource provisioning or a package/image build.
+See [manual deployment setup](docs/deployment.md#manual-update-of-an-existing-azure-demo)
+for owner-approved `azure-demo` reviewers/main-only protection, identity/registry
+preconditions, runner tools and immutable ACR digest input. Build/publish separately
+through protected CFS feeds with the three approved `VITE_ENTRA_*` fields embedded;
+if hosted CFS is unreachable, use an approved CFS-capable build runner or a reviewed
+prebuilt image, never public registry fallback. Smoke tests, SBOM/advisory review
+and separately approved infrastructure validation are required. Deployments lose
+ephemeral SQLite history and failures do not auto-rollback. The plan remains
+**Ready for Validation**; no real cloud checks have run. Secret-based login is not
+supported; the identity owner must revoke/rotate any pasted or exposed client secret.
 See the [standards assessment](docs/standards-compliance.md) for verified gaps and exceptions.
 For setup problems, use the repository's [issue templates](https://github.com/frkim/pernova/issues/new/choose).
 Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
