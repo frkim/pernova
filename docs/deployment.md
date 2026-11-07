@@ -1,7 +1,8 @@
 # Bounded Azure deployment
 
-**Status: template only; no subscription or region selected, no cloud deployment,
-no tenant consent or access changes.** Read [the plan](../.azure/deployment-plan.md)
+**Status: undeployed templates and a prepared, never-run image-update workflow;
+no subscription or region selected, no cloud deployment, no tenant consent or
+access changes.** Read [the plan](../.azure/deployment-plan.md)
 and [binding API contract](api-contract.md) first. The original brief describes a
 target experience, not connected services.
 
@@ -307,6 +308,80 @@ before adding project operations. This lane adds no SDK because the current
 adapter does not call project/agent APIs. An endpoint output, passing local
 validator or `configured` UI label cannot satisfy these live evidence gates.
 
+## Manual update of an existing Azure demo
+
+`.github/workflows/deploy-azure.yml` is prepared but **has never been run**.
+It supports manual `workflow_dispatch` **only on `main`**, targeting the
+`azure-demo` GitHub environment. Global permissions are `contents: read`;
+`id-token: write` is scoped to the deployment job for **OIDC only**.
+This is an image update, **not Azure bootstrap**: it provisions no resources,
+creates no identities/roles, and builds or installs no packages.
+
+### Owner-approved setup outside the workflow
+
+Persistent tenant permissions and GitHub settings require owner approval.
+Repository/IAM owners must separately configure required environment reviewers
+and a **main-only deployment branch rule** for `azure-demo`; the YAML does not
+create those protections. No settings changes or login are authorized now.
+
+| `azure-demo` setting | Required value |
+| --- | --- |
+| Variable `AZURE_RESOURCE_GROUP` | Existing approved resource group |
+| Variable `AZURE_CONTAINER_APP` | Existing approved connected-mode Container App; exactly one container named `api` and one replica |
+| Variable `AZURE_ACR_LOGIN_SERVER` | Approved ACR login host used to constrain the image input |
+| Optional variable `AZURE_DEPLOY_RUNNER` | Preconfigured Linux runner label; defaults to `ubuntu-latest` |
+| Secret `AZURE_CREDENTIALS` | JSON object with **exactly** `clientId`, `tenantId`, `subscriptionId`, each a GUID; identity metadata only, no `clientSecret` or other keys |
+
+Use an existing deployment identity with this approved federated credential:
+
+- Subject: `repo:frkim/pernova:environment:azure-demo`
+- Issuer: `https://token.actions.githubusercontent.com`
+- Audience: `api://AzureADTokenExchange`
+
+Grant only Container App read/write plus revision and auth-config read at the
+**app resource scope**. Do not grant broad subscription Contributor or create
+apps/roles from the workflow. The existing Container App must already have
+UAMI-based registry configuration and approved registry-scoped `AcrPull`;
+registry passwords and ACR admin authentication are not supported.
+The runner must already have Azure CLI with working `containerapp` commands,
+Python 3 and curl. Dynamic CLI extensions are disabled; no tool installation
+or upgrade occurs.
+
+Secret-based Azure login is **not supported**. Any pasted or exposed client
+secret must be revoked/rotated by the identity owner; do not copy it into
+configuration, logs or workflow inputs.
+
+### Reviewed image and later dispatch
+
+Build and publish separately on approved **CFS-capable infrastructure**, using
+the root Dockerfile and committed locked sources. If hosted-runner CFS access
+is unreachable, use an approved CFS-capable build runner or a prebuilt reviewed
+image, **never a public package-registry fallback**. This deployment workflow
+does not change Dockerfile, manifests or lockfiles.
+
+The image must embed all three approved `VITE_ENTRA_TENANT_ID`,
+`VITE_ENTRA_CLIENT_ID` and `VITE_ENTRA_API_SCOPE` values using the
+[existing browser-auth review process](#identity-contract-and-route-table).
+The root Dockerfile presently requires reviewed build configuration for these
+fields; this workflow neither modifies nor rebuilds the frontend. Runtime
+environment changes cannot supply missing build-time browser configuration.
+Require an **actual smoke-tested image**, SBOM/advisory review and separately
+approved infrastructure validation before dispatch, not just a successful
+source build or offline Bicep compilation.
+
+After those approvals, dispatch from `main` with `container_image` in the exact
+immutable form `<approved-acr-host>/<repository>@sha256:<64 lowercase hex>`.
+The host must match `AZURE_ACR_LOGIN_SERVER`; mutable tags are not accepted.
+The workflow updates only the existing `api` container image and checks the
+new revision plus `/health/ready`. It does not change runtime/environment,
+authentication or network settings, and readiness does not prove tenant
+sign-in, APIM enforcement or integration connectivity.
+
+A deployment loses ephemeral SQLite history. Revision or readiness errors
+**do not automatically roll back**; an owner must review failure evidence and
+separately approve recovery using a known-good digest. The plan remains
+**Ready for Validation**: no real cloud validation or deployment is claimed.
+
 ## Offline validation (safe now)
 
 Run from the repository root with the **already installed** CLI:
@@ -330,10 +405,12 @@ static regression checks, **not live APIM
 policy-expression or Entra authorization tests**.
 
 After **separate cloud approval**, the platform owner uses a protected OIDC
-pipeline to validate and review what-if against the approved target, then deploy.
-Production changes are IaC-only, with environment reviewers; no stored Azure
-credentials. Review denial tests in [gateway controls](gateway-controls.md) before
-marking any integration connected.
+infrastructure pipeline to validate and review what-if against the approved
+target, then provision separately. The manual workflow above only updates an
+existing demo image; it cannot replace infrastructure validation or provisioning.
+Production infrastructure changes are IaC-only, with environment reviewers;
+no stored Azure authentication secrets. Review denial tests in
+[gateway controls](gateway-controls.md) before marking any integration connected.
 
 ## Explicit deployment gaps
 

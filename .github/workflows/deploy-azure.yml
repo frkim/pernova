@@ -1,0 +1,207 @@
+name: Deploy Azure demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      container_image:
+        description: Reviewed CFS-built ACR image URI including @sha256 digest
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-azure-demo
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.AZURE_DEPLOY_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    environment: azure-demo
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      AZURE_EXTENSION_USE_DYNAMIC_INSTALL: 'no'
+      AZURE_CORE_COLLECT_TELEMETRY: 'no'
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      CONTAINER_APP: ${{ vars.AZURE_CONTAINER_APP }}
+      REGISTRY_SERVER: ${{ vars.AZURE_ACR_LOGIN_SERVER }}
+      CONTAINER_IMAGE: ${{ inputs.container_image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate deployment inputs and installed tooling
+        env:
+          AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+        run: |
+          set -euo pipefail
+          command -v az
+          command -v python3
+          command -v curl
+          az containerapp update --help > /dev/null
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import uuid
+
+          try:
+              credentials = json.loads(os.environ["AZURE_CREDENTIALS"])
+          except (KeyError, ValueError):
+              raise SystemExit("AZURE_CREDENTIALS must contain valid OIDC identity JSON.") from None
+          if not isinstance(credentials, dict) or set(credentials) != {
+              "clientId", "tenantId", "subscriptionId"
+          }:
+              raise SystemExit("AZURE_CREDENTIALS requires exactly clientId, tenantId and subscriptionId; no clientSecret.")
+          for field, value in credentials.items():
+              if not isinstance(value, str):
+                  raise SystemExit(f"AZURE_CREDENTIALS.{field} must be a GUID.")
+              try:
+                  parsed = uuid.UUID(value)
+              except ValueError:
+                  raise SystemExit(f"AZURE_CREDENTIALS.{field} must be a GUID.") from None
+              if str(parsed) != value.lower():
+                  raise SystemExit(f"AZURE_CREDENTIALS.{field} must be a canonical GUID.")
+          for field, pattern in {
+              "RESOURCE_GROUP": r"[A-Za-z0-9_()](?:[A-Za-z0-9_.()-]{0,88}[A-Za-z0-9_()-])?",
+              "CONTAINER_APP": r"[a-z][a-z0-9-]{0,30}[a-z0-9]",
+              "REGISTRY_SERVER": r"[a-z0-9]{5,50}\.azurecr\.io",
+          }.items():
+              if not re.fullmatch(pattern, os.environ.get(field, "")):
+                  raise SystemExit(f"Missing or invalid deployment setting: {field}.")
+          image_pattern = (
+              re.escape(os.environ["REGISTRY_SERVER"])
+              + r"/[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*"
+              + r"@sha256:[0-9a-f]{64}"
+          )
+          image = os.environ["CONTAINER_IMAGE"]
+          if len(image) > 512 or not re.fullmatch(image_pattern, image):
+              raise SystemExit("container_image must be an immutable digest URI in the approved ACR.")
+          PY
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+          tenant-id: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+          subscription-id: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+      - name: Check existing connected app and managed-identity image pull
+        run: |
+          set -euo pipefail
+          export APP_CONFIG
+          APP_CONFIG="$(az containerapp show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --output json)"
+          export AUTH_CONFIG
+          AUTH_CONFIG="$(az containerapp auth show --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --output json)"
+          python3 - <<'PY'
+          import json
+          import os
+
+          app = json.loads(os.environ["APP_CONFIG"])
+          properties = app["properties"]
+          configuration = properties["configuration"]
+          template = properties["template"]
+          containers = template["containers"]
+          if len(containers) != 1 or containers[0]["name"] != "api":
+              raise SystemExit("The target must have exactly one api container.")
+          environment = {item["name"]: item.get("value") for item in containers[0].get("env", [])}
+          if environment.get("PERNOVA_MODE") != "connected":
+              raise SystemExit("The existing app must already be configured for connected mode.")
+          if template["scale"].get("maxReplicas") != 1 or configuration.get("activeRevisionsMode") != "Single":
+              raise SystemExit("The SQLite demo requires Single revision mode and maxReplicas=1.")
+          ingress = configuration["ingress"]
+          if ingress.get("targetPort") != 8000 or not ingress.get("external") or ingress.get("allowInsecure"):
+              raise SystemExit("The existing app requires external HTTPS ingress on port 8000.")
+          host = ingress.get("fqdn", "")
+          if not host.endswith(".azurecontainerapps.io") or "/" in host:
+              raise SystemExit("The existing app must have an Azure Container Apps HTTPS hostname.")
+          registries = configuration.get("registries", [])
+          if not any(
+              entry.get("server") == os.environ["REGISTRY_SERVER"]
+              and entry.get("identity", "").startswith("/subscriptions/")
+              and not entry.get("passwordSecretRef")
+              for entry in registries
+          ):
+              raise SystemExit("The approved ACR must already use a user-assigned managed identity with AcrPull.")
+          auth = json.loads(os.environ["AUTH_CONFIG"])["properties"]
+          validation = auth.get("globalValidation", {})
+          expected_exclusions = {"/", "/assets/*", "/theme.js", "/favicon.svg", "/health/live", "/health/ready"}
+          if (
+              auth.get("platform", {}).get("enabled") is not True
+              or validation.get("unauthenticatedClientAction") != "Return401"
+              or set(validation.get("excludedPaths", [])) != expected_exclusions
+              or auth.get("httpSettings", {}).get("requireHttps") is not True
+              or auth.get("identityProviders", {}).get("azureActiveDirectory", {}).get("enabled") is not True
+          ):
+              raise SystemExit("The existing app must retain the reviewed Entra bearer-auth configuration and exact public-path exclusions.")
+          PY
+      - name: Roll out the reviewed immutable image
+        id: rollout
+        run: |
+          set -euo pipefail
+          revision="$(az containerapp update \
+            --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+            --container-name api --image "$CONTAINER_IMAGE" \
+            --revision-suffix "gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --query properties.latestRevisionName --output tsv)"
+          if [[ "$revision" != "$CONTAINER_APP--gh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ]]; then
+            echo "::error::Azure did not return the requested revision."
+            exit 1
+          fi
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Verify the new revision and application readiness
+        env:
+          REVISION: ${{ steps.rollout.outputs.revision }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            actual_image="$(az containerapp revision show \
+              --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --revision "$REVISION" \
+              --query 'properties.template.containers[0].image' --output tsv)"
+            if [[ "$actual_image" != "$CONTAINER_IMAGE" ]]; then
+              echo "::error::The new revision does not contain the requested image."
+              exit 1
+            fi
+            state="$(az containerapp revision show \
+              --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" --revision "$REVISION" \
+              --query properties.provisioningState --output tsv)"
+            if [[ "$state" == "Failed" || "$state" == "ProvisioningFailed" ]]; then
+              echo "::error::The new revision failed provisioning."
+              exit 1
+            fi
+            ready_revision="$(az containerapp show \
+              --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+              --query properties.latestReadyRevisionName --output tsv)"
+            if [[ "$state" == "Provisioned" && "$ready_revision" == "$REVISION" ]]; then
+              host="$(az containerapp show \
+                --name "$CONTAINER_APP" --resource-group "$RESOURCE_GROUP" \
+                --query properties.configuration.ingress.fqdn --output tsv)"
+              if [[ ! "$host" =~ ^[a-z0-9.-]+\.azurecontainerapps\.io$ ]]; then
+                echo "::error::Azure returned an unexpected ingress hostname."
+                exit 1
+              fi
+              response="$(curl --fail --silent --show-error --proto '=https' \
+                --connect-timeout 5 --max-time 20 --retry 3 --retry-max-time 90 \
+                "https://$host/health/ready")"
+              export READY_RESPONSE="$response"
+              python3 - <<'PY'
+          import json
+          import os
+
+          if json.loads(os.environ["READY_RESPONSE"]) != {"status": "ready"}:
+              raise SystemExit("The application did not return the expected readiness response.")
+          PY
+              printf 'Deployed `%s` to revision `%s`.\n\nEndpoint: https://%s\n' \
+                "$CONTAINER_IMAGE" "$REVISION" "$host" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::The requested revision did not become ready within 30 checks. Inspect the rollout; no automatic rollback was attempted."
+          exit 1
