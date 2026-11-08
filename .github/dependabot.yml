@@ -23,7 +23,7 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
-    registries: [python-cfs]
+    registries: "*"
   - package-ecosystem: github-actions
     directory: /
     schedule:

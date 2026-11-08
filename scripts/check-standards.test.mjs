@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   checkFoundrySource,
@@ -82,4 +83,11 @@ test('rejects legacy clients and Assistants calls in application code', () => {
 
 test('current repository passes the same checks used by lint and CI', () => {
   assert.doesNotThrow(() => checkRepository(fileURLToPath(new URL('../', import.meta.url))));
+});
+
+test('makes configured registries available to Python Dependabot updates', () => {
+  const config = readFileSync(new URL('../.github/dependabot.yml', import.meta.url), 'utf8');
+  const uvUpdate = config.match(/  - package-ecosystem: uv\n([\s\S]*?)(?=  - package-ecosystem:|$)/);
+  assert.ok(uvUpdate);
+  assert.match(uvUpdate[1], /^\s+registries:\s+"\*"\s*$/m);
 });
