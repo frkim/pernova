@@ -43,6 +43,13 @@ persistent local journal and traces.
 | FinOps | Tokens, estimated costs, budgets and control decisions |
 | Audit | JSON evidence export for a workflow and its decision |
 
+The European route map uses bundled public-domain Natural Earth country contours
+in a Mercator projection, without external tiles or a mapping service.
+Paris, Brussels, Madrid and Rotterdam are illustrative geographic landmarks,
+not verified Pernova facilities; sourcing routes remain synthetic options.
+Directional motion highlights the selected route, with a pause control and
+automatic suspension offscreen, in hidden tabs, or when reduced motion is enabled.
+
 Azure integration targets **Microsoft Foundry (new/v2), Azure API Management,
 Application Insights/Azure Monitor and Agent 365**.
 Inference uses the OpenAI v1 Responses API; project operations, if added, must
